@@ -175,14 +175,7 @@ const panel = createPanel(uiRoot, {
     paused = true;
     panel.setPaused(true);
   },
-  onReset: () => {
-    world.reset(opts.softening);
-    clearTrails();
-    // 天体跳回初始点的瞬间，若留着旧锚点会把相机一起甩飞
-    followAnchor = null;
-    panel.syncBodies(world.initial);
-    panel.showToast('已重置到当前初始条件');
-  },
+  onReset: () => doReset(),
   onSpeed: (v) => {
     timeScale = v;
   },
@@ -487,6 +480,9 @@ function focusOn(getPos, radius) {
 }
 
 function clearFocus() {
+  // 关键：必须同时取消正在进行的相机补间，否则 followFocus 已被置空后，
+  // 补间完成时会在 tick 里访问 followFocus._last 抛 TypeError；
+  // 而且相机还会「刹不住」继续飞向旧目标，即使焦点已释放。
   camTween.active = false;
   followFocus = null;
   stage.controls.enabled = true;
@@ -515,6 +511,27 @@ function resetViewpoint(radius) {
   followAnchor = null;
   stage.setView('default', radius);
   stage.frameRadius(radius);
+}
+
+/**
+ * 重置：根据当前模式执行不同的「归零」。
+ *   - 三体模式：恢复预设原始初始条件（清除用户所有编辑），清空拖尾；
+ *   - 太阳系模式：行星时钟归零，让八大行星重新从初始相位起步。
+ * 早先的 bug：在太阳系模式下按 R 仍会去复位三体世界、刷新三体滑块，
+ * 与该模式无关且令人困惑，且三体世界当时根本不可见。
+ */
+function doReset() {
+  if (currentMode === 'threebody') {
+    world.reset(opts.softening);
+    clearTrails();
+    followAnchor = null;
+    panel.syncBodies(world.initial);
+    panel.showToast('已重置到当前初始条件');
+  } else {
+    solar.years = 0;
+    solar.setYears(0);
+    panel.showToast('已重置行星时钟');
+  }
 }
 
 // ── 射线拾取 ─────────────────────────────────────────────────
@@ -663,11 +680,7 @@ window.addEventListener('keydown', (e) => {
   } else if (k === 'm') {
     setMusicPlaying(!userWantsMusic);
   } else if (k === 'r') {
-    world.reset(opts.softening);
-    clearTrails();
-    followAnchor = null;
-    panel.syncBodies(world.initial);
-    panel.showToast('已重置');
+    doReset();
   } else if (k === '.') {
     stepOnce = true;
     paused = true;
@@ -773,7 +786,8 @@ function tick(now) {
       camTween.active = false;
       stage.controls.enabled = true;
       stage.controls.autoRotate = immersive;
-      followFocus._last = followFocus.getPos().clone();
+      // 仅在焦点仍有效时记录锚点；clearFocus 已在补间途中置空 followFocus
+      if (followFocus) followFocus._last = followFocus.getPos().clone();
     }
   } else if (followFocus) {
     const p = followFocus.getPos();
@@ -848,4 +862,4 @@ requestAnimationFrame(() => {
 });
 
 // 调试入口
-window.__threeBody = { world, stage, env, panel, solar, loadPreset, setMode, view, opts };
+window.__threeBody = { world, stage, env, panel, solar, loadPreset, setMode, view, opts, focusOn, clearFocus };
