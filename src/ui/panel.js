@@ -58,6 +58,11 @@ export function createPanel(root, handlers = {}) {
       onExportCSV: () => {},
       onScreenshot: () => {},
       onRandomize: () => {},
+      onMode: () => {},
+      onFps: () => {},
+      onMusicToggle: () => {},
+      onMusicTrack: () => {},
+      onMusicVolume: () => {},
     },
     handlers
   );
@@ -197,6 +202,52 @@ export function createPanel(root, handlers = {}) {
     };
   }
 
+  /** 分段选择行（如模式切换、帧率、音轨） */
+  function segmentedRow(label, options, initial, onChange) {
+    const wrap = el('div', { class: 'row' });
+    const lab = el('div', { class: 'row-label' });
+    lab.appendChild(el('span', { text: label }));
+    wrap.appendChild(lab);
+
+    const seg = el('div', { class: 'seg' });
+    const btnMap = new Map();
+    let current = initial;
+    options.forEach((opt) => {
+      const b = el('button', {
+        class: 'seg-btn' + (opt.value === initial ? ' active' : ''),
+        text: opt.label,
+        title: opt.title || '',
+        onclick: () => {
+          current = opt.value;
+          btnMap.forEach((bb, v) => bb.classList.toggle('active', v === current));
+          onChange(opt.value);
+        },
+      });
+      btnMap.set(opt.value, b);
+      seg.appendChild(b);
+    });
+    wrap.appendChild(seg);
+    return {
+      node: wrap,
+      set(v) {
+        current = v;
+        btnMap.forEach((bb, val) => bb.classList.toggle('active', val === v));
+      },
+    };
+  }
+
+  // ── 0. 宇宙模式 ───────────────────────────────────────────
+  const modeRow = segmentedRow(
+    '宇宙模式',
+    [
+      { value: 'threebody', label: '三体问题' },
+      { value: 'solar', label: '八大行星' },
+    ],
+    'threebody',
+    (v) => h.onMode(v)
+  );
+  body.appendChild(modeRow.node);
+
   // ── 1. 初始构型 ────────────────────────────────────────────
   const secPreset = section('初始构型 · Presets', true);
   const chips = el('div', { class: 'chips' });
@@ -244,6 +295,20 @@ export function createPanel(root, handlers = {}) {
     onInput: (v) => h.onSpeed(Math.pow(10, v)),
   });
   secTime.body.appendChild(speedSlider.node);
+
+  // 目标帧率（渲染节流；物理仍按真实时间推进）
+  const fpsRow = segmentedRow(
+    '目标帧率',
+    [
+      { value: 'unlimited', label: '无限' },
+      { value: '90', label: '90' },
+      { value: '60', label: '60' },
+      { value: '30', label: '30' },
+    ],
+    'unlimited',
+    (v) => h.onFps(v)
+  );
+  secTime.body.appendChild(fpsRow.node);
   body.appendChild(secTime.details);
 
   // ── 3. 天体参数 ────────────────────────────────────────────
@@ -425,6 +490,45 @@ export function createPanel(root, handlers = {}) {
 
   const chart = new DriftChart(canvas);
 
+  // ── 6.5 宇宙音景 ──────────────────────────────────────────
+  const secSound = section('宇宙音景 · Soundscape', true);
+  const tMusic = toggleRow('背景音乐', false, (v) => h.onMusicToggle(v));
+  secSound.body.appendChild(tMusic.node);
+
+  const trackRow = segmentedRow(
+    '音轨',
+    [
+      { value: 'void', label: '寂灭' },
+      { value: 'stars', label: '远星' },
+      { value: 'drift', label: '流浪' },
+      { value: 'lunar', label: '广寒' },
+      { value: 'entropy', label: '熵' },
+    ],
+    'void',
+    (v) => h.onMusicTrack(v)
+  );
+  secSound.body.appendChild(trackRow.node);
+
+  const volS = sliderRow('音量', {
+    min: 0,
+    max: 1,
+    step: 0.01,
+    value: 0.32,
+    format: (v) => `${Math.round(v * 100)}%`,
+    onInput: (v) => h.onMusicVolume(v),
+  });
+  secSound.body.appendChild(volS.node);
+
+  secSound.body.appendChild(
+    el('div', {
+      class: 'mini',
+      html:
+        '全部音轨由 Web Audio 实时合成（无外部文件）：低频呼吸铺底 + 稀疏空灵钟铃 + 长混响。<br>' +
+        '切换音轨即时生效，生成式循环、永无接缝。',
+    })
+  );
+  body.appendChild(secSound.details);
+
   // ── 7. 导出 ────────────────────────────────────────────────
   const secExport = section('导出 · Export', false);
   const expRow = el('div', { class: 'btn-row' });
@@ -465,6 +569,19 @@ export function createPanel(root, handlers = {}) {
 
     setSoftening(v) {
       softS.set(v);
+    },
+
+    /** 外部（如快捷键）切换模式时，同步分段控件 */
+    setMode(v) {
+      modeRow.set(v);
+    },
+
+    setMusicPlaying(v) {
+      tMusic.set(v);
+    },
+
+    setMusicTrack(v) {
+      trackRow.set(v);
     },
 
     /** 把当前初始条件同步回所有滑块（载入预设或重置后调用） */
