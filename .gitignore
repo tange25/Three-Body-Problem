@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.tmp-*
+.smoke.png
+*.log
+.DS_Store
+.workbuddy

@@ -1,0 +1,20 @@
+{
+  "name": "three-body-sim",
+  "version": "1.0.0",
+  "description": "《三体》灵感的三体运动 3D 模拟器 · three.js + Velocity Verlet 辛式积分",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "standalone": "vite build && node scripts/build-standalone.js",
+    "all": "vite build && node scripts/build-standalone.js"
+  },
+  "dependencies": {
+    "three": "^0.169.0"
+  },
+  "devDependencies": {
+    "vite": "^5.4.10"
+  }
+}
