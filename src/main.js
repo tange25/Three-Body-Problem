@@ -836,6 +836,9 @@ stage.setBloom(view.bloom, bloomStrength, bloomRadius, bloomThreshold);
 panel.setPaused(false);
 requestAnimationFrame(tick);
 
+// 移动端（窄屏）默认折叠控制面板，避免遮挡画面；用户点 ☰ 可重新展开
+if (window.matchMedia('(max-width: 640px)').matches) panel.setCollapsed(true);
+
 // 深链：#solar 直接进入八大行星模式（便于分享 / 调试）
 if (location.hash === '#solar') setMode('solar');
 

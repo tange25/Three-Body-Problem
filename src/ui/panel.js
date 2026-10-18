@@ -547,6 +547,10 @@ export function createPanel(root, handlers = {}) {
   const api = {
     showToast,
     toggleCollapse,
+    setCollapsed(v) {
+      const cur = panel.classList.contains('collapsed');
+      if (v !== cur) toggleCollapse();
+    },
 
     setHint(text) {
       hintBox.innerHTML = text;

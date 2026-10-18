@@ -50,6 +50,8 @@ export class World {
 
     /** 用户设定的「初始条件」（重置即回到这里） */
     this.initial = null;
+    /** 载入预设时的原始初始条件（永不因编辑被污染；重置恢复到此） */
+    this.presetOriginal = null;
 
     this.history = new RingLog(1200, 5); // t, 能量漂移, |P|, 角动量漂移, 幽灵分离
     this.trace = new RingLog(3000, 19); // t + pos(9) + vel(9) —— 供 CSV 导出
@@ -62,6 +64,7 @@ export class World {
 
   /** 载入一组已归一化的 bodies */
   load(bodies, softening) {
+    this.presetOriginal = cloneBodies(bodies);
     this.initial = cloneBodies(bodies);
     this._applyInitial(softening);
   }
@@ -76,8 +79,9 @@ export class World {
     this.separation = 0;
   }
 
-  /** 重置到当前设定的初始条件 */
+  /** 重置到当前预设的原始初始条件（清除用户在面板上的所有编辑） */
   reset(softening) {
+    this.initial = cloneBodies(this.presetOriginal);
     this._applyInitial(softening);
   }
 

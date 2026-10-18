@@ -46,7 +46,7 @@ export const PHYSICS_DEFAULTS = {
 export const RENDER_DEFAULTS = {
   trailCapacity: 2400,
   trailOpacity: 0.95,
-  bloomStrength: 0.85,
+  bloomStrength: 0.15,
   bloomRadius: 0.55,
   bloomThreshold: 0.12,
   showTrails: true,
