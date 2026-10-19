@@ -619,6 +619,17 @@ input[type='range']::-moz-range-thumb {
   font-weight: 500;
 }
 
+/* HUD 中「目标 N fps」的次级标注 */
+.hud .goal {
+  margin-left: 5px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--panel-border);
+  color: var(--text-dim);
+  font-size: 10px;
+  opacity: 0.85;
+}
+
 .hud .sep {
   width: 1px;
   background: var(--panel-border);

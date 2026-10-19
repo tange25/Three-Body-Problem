@@ -4,6 +4,7 @@
 
 import { Simulation, computeDiagnostics } from './simulation.js';
 import { verletStep, suggestTimeStep, computeAccelerations, integrateAdaptive } from './integrator.js';
+import { PHYSICS_DEFAULTS } from './constants.js';
 
 class RingLog {
   constructor(capacity, stride) {
@@ -46,7 +47,7 @@ export class World {
     this.ghost = new Simulation();
     this.ghostEnabled = false;
     /** 施加在 α 天体 x 坐标上的初始扰动量级 */
-    this.perturbation = 1e-9;
+    this.perturbation = PHYSICS_DEFAULTS.perturbation;
 
     /** 用户设定的「初始条件」（重置即回到这里） */
     this.initial = null;

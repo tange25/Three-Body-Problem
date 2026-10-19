@@ -3,7 +3,7 @@
  */
 
 import { PRESETS } from '../core/presets.js';
-import { BODY_PALETTE } from '../core/constants.js';
+import { BODY_PALETTE, PHYSICS_DEFAULTS, RENDER_DEFAULTS, AUDIO_DEFAULTS } from '../core/constants.js';
 import { DriftChart } from './chart.js';
 
 function el(tag, attrs = {}, children = []) {
@@ -367,12 +367,14 @@ export function createPanel(root, handlers = {}) {
   body.appendChild(secBodies.details);
 
   // ── 4. 视觉表现 ────────────────────────────────────────────
+  // 注意：所有滑块初值一律取自 core/constants.js 的默认常量，
+  // 不再在 UI 层写死数字——否则会出现「面板显示 0.85、实际生效 0.15」这类分家 bug。
   const secView = section('视觉 · Visual', false);
   const trailLen = sliderRow('拖尾长度', {
     min: 100,
     max: 8000,
     step: 100,
-    value: 2400,
+    value: RENDER_DEFAULTS.trailCapacity,
     format: (v) => `${v} 点`,
     onInput: (v) => h.onTrailLength(Math.round(v)),
   });
@@ -380,7 +382,7 @@ export function createPanel(root, handlers = {}) {
     min: 0,
     max: 1.6,
     step: 0.01,
-    value: 0.95,
+    value: RENDER_DEFAULTS.trailOpacity,
     format: (v) => v.toFixed(2),
     onInput: (v) => h.onTrailOpacity(v),
   });
@@ -388,7 +390,7 @@ export function createPanel(root, handlers = {}) {
     min: 0,
     max: 2.5,
     step: 0.01,
-    value: 0.85,
+    value: RENDER_DEFAULTS.bloomStrength,
     format: (v) => v.toFixed(2),
     onInput: (v) => h.onBloom(v),
   });
@@ -426,7 +428,7 @@ export function createPanel(root, handlers = {}) {
     min: 2,
     max: 5,
     step: 0.05,
-    value: 4,
+    value: -Math.log10(PHYSICS_DEFAULTS.etaVelocity),
     format: (v) => `η = 1e-${v.toFixed(1)}`,
     onInput: (v) => h.onQuality(v),
   });
@@ -439,7 +441,7 @@ export function createPanel(root, handlers = {}) {
     min: -12,
     max: -1,
     step: 0.1,
-    value: -9,
+    value: Math.log10(PHYSICS_DEFAULTS.perturbation),
     format: (v) => `1e${v.toFixed(1)}`,
     onInput: (v) => h.onPerturbation(Math.pow(10, v)),
   });
@@ -504,7 +506,7 @@ export function createPanel(root, handlers = {}) {
       { value: 'lunar', label: '广寒' },
       { value: 'entropy', label: '熵' },
     ],
-    'void',
+    AUDIO_DEFAULTS.track,
     (v) => h.onMusicTrack(v)
   );
   secSound.body.appendChild(trackRow.node);
@@ -513,7 +515,7 @@ export function createPanel(root, handlers = {}) {
     min: 0,
     max: 1,
     step: 0.01,
-    value: 0.32,
+    value: AUDIO_DEFAULTS.volume,
     format: (v) => `${Math.round(v * 100)}%`,
     onInput: (v) => h.onMusicVolume(v),
   });
@@ -619,7 +621,13 @@ export function createPanel(root, handlers = {}) {
       hudTime.innerHTML = `t <b>${frame.time.toFixed(2)}</b>`;
       hudSteps.innerHTML = `子步 <b>${frame.substeps}</b>/帧`;
       hudDt.innerHTML = `Δt <b>${frame.dt.toExponential(1)}</b>`;
-      hudFps.innerHTML = `<b>${Math.round(frame.fps)}</b> fps`;
+      // fps 显示的是**真实渲染帧率**（受目标帧率节流影响），而非 rAF 循环率：
+      // 设了目标 30 就必须给出 30，否则用户无法确认节流是否真的生效。
+      const goal =
+        frame.targetFps && frame.targetFps !== 'unlimited'
+          ? `<span class="goal">目标 ${frame.targetFps}</span>`
+          : '';
+      hudFps.innerHTML = `<b>${Math.round(frame.fps)}</b> fps${goal}`;
 
       // 近距离飞越时积分器会主动降速以保精度，这里如实告知
       const th = frame.throttle ?? 1;

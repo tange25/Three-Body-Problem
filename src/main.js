@@ -20,7 +20,7 @@ import { Trail } from './render/trails.js';
 import { SolarSystem } from './render/solar-system.js';
 import { World } from './core/world.js';
 import { materializePreset, PRESETS } from './core/presets.js';
-import { PHYSICS_DEFAULTS, RENDER_DEFAULTS, BODY_PALETTE } from './core/constants.js';
+import { PHYSICS_DEFAULTS, RENDER_DEFAULTS, BODY_PALETTE, AUDIO_DEFAULTS } from './core/constants.js';
 import { createPanel } from './ui/panel.js';
 import { CosmicAmbient } from './audio/cosmic-ambient.js';
 import { buildTraceCSV, downloadText, downloadDataURL, timestampName } from './utils/exporter.js';
@@ -81,6 +81,15 @@ let sceneRadius = 3;
 let currentPresetId = 'figure8';
 let currentMode = 'threebody';
 let targetFps = 'unlimited';
+
+/** 渲染帧率统计：只统计真正调用了 stage.render() 的帧（rAF 循环率 ≠ 画面帧率） */
+let renderFrames = 0;
+let renderWindowStart = performance.now();
+let renderFps = 60;
+function resetFpsCounter() {
+  renderFrames = 0;
+  renderWindowStart = performance.now();
+}
 
 // ── 天体与拖尾 ───────────────────────────────────────────────
 const bodyViews = BODY_PALETTE.map((p) => new BodyView({ color: p.color }));
@@ -261,6 +270,8 @@ const panel = createPanel(uiRoot, {
   onMode: (m) => setMode(m),
   onFps: (v) => {
     targetFps = v;
+    // 立刻重开统计窗口，避免新旧两种节流速度的帧混在一起算
+    resetFpsCounter();
   },
   onMusicToggle: (v) => setMusicPlaying(v),
   onMusicTrack: (id) => selectTrack(id),
@@ -274,7 +285,7 @@ let userWantsMusic = false;
 let immersiveAutoMusic = false;
 let revealTimer = null;
 let musicAutoStarted = false;
-let currentTrack = 'void'; // 当前音轨（与 CosmicAmbient 默认音轨一致）
+let currentTrack = AUDIO_DEFAULTS.track; // 当前音轨（需与 CosmicAmbient 的默认音轨同源）
 
 // 首次用户手势后自动起乐：浏览器的自动播放策略要求 AudioContext 必须在
 // 用户手势（点击 / 按键）内创建或 resume，因此不能在页面加载时直接播。
@@ -803,6 +814,13 @@ function tick(now) {
   if (doRender) {
     lastRender = now;
     stage.render();
+    renderFrames++;
+  }
+  // 每 500ms 结一次账 → 真实渲染帧率（受屏幕刷新率上限约束，90/120 未必达得到）
+  if (now - renderWindowStart >= 500) {
+    renderFps = (renderFrames * 1000) / (now - renderWindowStart);
+    renderFrames = 0;
+    renderWindowStart = now;
   }
 
   // UI 面板与信息卡节流刷新
@@ -814,7 +832,8 @@ function tick(now) {
         time: world.main.state.time,
         substeps: world.stats.substeps,
         dt: world.stats.dt,
-        fps,
+        fps: renderFps,
+        targetFps,
         diag: dd,
         drift: lastDrift,
         throttle: lastThrottle,
@@ -829,7 +848,8 @@ function tick(now) {
         time: solar.years,
         substeps: 0,
         dt: 0,
-        fps,
+        fps: renderFps,
+        targetFps,
         diag: { E: 0, pNorm: 0, lNorm: 0, kinetic: 0, potential: 0, com: [0, 0, 0] },
         drift: 0,
         throttle: 1,

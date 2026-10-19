@@ -40,6 +40,8 @@ export const PHYSICS_DEFAULTS = {
   minThrottleRate: 0.05,
   /** 子步循环内每隔多少步重估一次步长（防止帧中途突发的近距离飞越被错过） */
   recheckInterval: 16,
+  /** 混沌对照（幽灵宇宙）施加在 α 天体 x 坐标上的默认初始扰动 */
+  perturbation: 1e-9,
 };
 
 /** 渲染默认参数 */
@@ -55,6 +57,14 @@ export const RENDER_DEFAULTS = {
   showStars: true,
   followAlpha: false,
   bodyRadiusScale: 0.11,
+};
+
+/** 音景默认参数（面板滑块初值从这里取，保证与实际生效值同源） */
+export const AUDIO_DEFAULTS = {
+  /** 主音量 0~1 */
+  volume: 0.45,
+  /** 默认音轨 id，与 CosmicAmbient 内置的首条音轨一致 */
+  track: 'void',
 };
 
 /** 时间控制默认参数 */

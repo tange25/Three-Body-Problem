@@ -22,6 +22,8 @@
  */
 
 // ── 5 首音轨的配置 ──────────────────────────────────────────
+import { AUDIO_DEFAULTS } from '../core/constants.js';
+
 export const TRACKS = [
   {
     id: 'void',
@@ -129,7 +131,7 @@ export class CosmicAmbient {
     this.dry = null;
     this.playing = false;
     this.muted = false;
-    this.volume = 0.45;
+    this.volume = AUDIO_DEFAULTS.volume;
     this.trackId = 'void';
     this.cfg = trackById(this.trackId);
     this._schedTimer = null;
