@@ -251,7 +251,7 @@ const panel = createPanel(uiRoot, {
     world.syncGhost(opts.softening);
     ghostTrails.forEach((t) => t.clear());
   },
-  onView: (name) => stage.setView(name, sceneRadius),
+  onView: (name) => stage.setView(name, currentFrameRadius()),
   onExportCSV: () => {
     if (world.trace.count === 0) {
       panel.showToast('暂无轨迹数据');
@@ -516,6 +516,11 @@ function closeInfoCard() {
  *   ④ 还挂着的天体信息卡（显示的是上一构型的天体）
  * 表象即「换了构型，却还是上一个构型最后的样子」。
  */
+/** 当前模式下应该用来取景的半径（太阳系与三体各自独立，互不污染全局 sceneRadius） */
+function currentFrameRadius() {
+  return currentMode === 'solar' ? solar.getFrameRadius() : sceneRadius;
+}
+
 function resetViewpoint(radius) {
   clearFocus();
   closeInfoCard();
@@ -594,7 +599,6 @@ function setMode(mode) {
     pickables = solar.pickMeshes;
 
     const fr = solar.getFrameRadius();
-    sceneRadius = fr;
     env.setScale(fr);
     resetViewpoint(fr);
 
@@ -608,6 +612,7 @@ function setMode(mode) {
     trails.forEach((t) => (t.line.visible = view.trails));
     env.setGridVisible(view.grid);
     env.setComVisible(!immersive);
+    env.setScale(sceneRadius); // 复位环境缩放，否则从太阳系切回时质心白点/网格仍停在太阳系尺度
     pickables = bodyViews.map((b) => b.mesh);
     resetViewpoint(sceneRadius);
 

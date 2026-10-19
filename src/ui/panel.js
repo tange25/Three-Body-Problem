@@ -451,7 +451,7 @@ export function createPanel(root, handlers = {}) {
     class: 'mini',
     html:
       '内核：<b>Velocity Verlet</b>（二阶 · 辛式 · 时间可逆）<br>' +
-      '加速度：<b>a = G·Σ m_j·r⃗_ij / (r²+ε²)^{3/2}</b><br>' +
+      '加速度：<b>a = G·Σ m_j·<i>r</i><sub>ij</sub> / (r²+ε²)^{3/2}</b><br>' +
       '步长：<b>自适应</b>，受最近距离与最大速度/加速度约束',
   });
   secPhys.body.appendChild(physNote);
