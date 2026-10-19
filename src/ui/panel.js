@@ -400,8 +400,9 @@ export function createPanel(root, handlers = {}) {
   const tBloom = toggleRow('泛光 Bloom', true, (v) => h.onToggle('bloom', v));
   const tGrid = toggleRow('参考网格', true, (v) => h.onToggle('grid', v));
   const tStars = toggleRow('星空背景', true, (v) => h.onToggle('stars', v));
+  const tCom = toggleRow('质心标记', false, (v) => h.onToggle('com', v));
   const tFollow = toggleRow('视角跟随天体 α', false, (v) => h.onToggle('followAlpha', v));
-  secView.body.append(tTrail.node, tBloom.node, tGrid.node, tStars.node, tFollow.node);
+  secView.body.append(tTrail.node, tBloom.node, tGrid.node, tStars.node, tCom.node, tFollow.node);
 
   const viewRow = el('div', { class: 'btn-row', style: 'margin-top:8px' });
   ['默认', '俯视', '侧视', '斜角'].forEach((label, i) => {
@@ -607,7 +608,7 @@ export function createPanel(root, handlers = {}) {
     },
 
     setToggle(key, value) {
-      const map = { trails: tTrail, bloom: tBloom, grid: tGrid, stars: tStars, followAlpha: tFollow, ghost: tGhost };
+      const map = { trails: tTrail, bloom: tBloom, grid: tGrid, stars: tStars, com: tCom, followAlpha: tFollow, ghost: tGhost };
       if (map[key]) map[key].set(value);
       if (key === 'ghost') legendSep.style.display = value ? '' : 'none';
     },

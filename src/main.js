@@ -65,6 +65,7 @@ const view = {
   grid: RENDER_DEFAULTS.showGrid,
   stars: RENDER_DEFAULTS.showStars,
   followAlpha: RENDER_DEFAULTS.followAlpha,
+  com: false, // 质心标记（默认关，避免干扰；需要时再开）
   ghost: false,
 };
 
@@ -201,6 +202,8 @@ const panel = createPanel(uiRoot, {
       stage.setBloom(value, bloomStrength, bloomRadius, bloomThreshold);
     } else if (key === 'grid') {
       if (currentMode === 'threebody') env.setGridVisible(value);
+    } else if (key === 'com') {
+      applyComVisibility();
     } else if (key === 'stars') {
       env.setStarsVisible(value);
     } else if (key === 'followAlpha') {
@@ -418,7 +421,7 @@ function enterImmersive() {
   stage.controls.autoRotate = true;
   stage.controls.autoRotateSpeed = 0.32;
   env.setGridVisible(false);
-  env.setComVisible(false);
+  applyComVisibility();
   if (view.bloom) stage.setBloom(true, Math.min(1.6, bloomStrength + 0.18), bloomRadius, bloomThreshold);
   if (!userWantsMusic && !audio.playing) {
     setMusicPlaying(true);
@@ -437,7 +440,7 @@ function exitImmersive() {
   stage.controls.autoRotate = false;
   if (currentMode === 'threebody') {
     env.setGridVisible(view.grid);
-    env.setComVisible(true);
+    applyComVisibility();
   }
   if (view.bloom) stage.setBloom(true, bloomStrength, bloomRadius, bloomThreshold);
   if (immersiveAutoMusic && audio.playing) {
@@ -521,6 +524,11 @@ function currentFrameRadius() {
   return currentMode === 'solar' ? solar.getFrameRadius() : sceneRadius;
 }
 
+/** 质心标记显隐的单一真源：仅三体模式 + 非沉浸 + 用户开启时显示 */
+function applyComVisibility() {
+  env.setComVisible(view.com && !immersive && currentMode === 'threebody');
+}
+
 function resetViewpoint(radius) {
   clearFocus();
   closeInfoCard();
@@ -594,7 +602,7 @@ function setMode(mode) {
     trails.forEach((t) => (t.line.visible = false));
     ghostTrails.forEach((t) => (t.line.visible = false));
     env.setGridVisible(false);
-    env.setComVisible(false);
+    applyComVisibility();
     solar.setVisible(true);
     pickables = solar.pickMeshes;
 
@@ -611,7 +619,7 @@ function setMode(mode) {
     bodyViews.forEach((b) => b.setVisible(true));
     trails.forEach((t) => (t.line.visible = view.trails));
     env.setGridVisible(view.grid);
-    env.setComVisible(!immersive);
+    applyComVisibility();
     env.setScale(sceneRadius); // 复位环境缩放，否则从太阳系切回时质心白点/网格仍停在太阳系尺度
     pickables = bodyViews.map((b) => b.mesh);
     resetViewpoint(sceneRadius);
@@ -871,6 +879,7 @@ function tick(now) {
 
 // ── 启动 ─────────────────────────────────────────────────────
 loadPreset('figure8');
+applyComVisibility();
 stage.setBloom(view.bloom, bloomStrength, bloomRadius, bloomThreshold);
 panel.setPaused(false);
 requestAnimationFrame(tick);
