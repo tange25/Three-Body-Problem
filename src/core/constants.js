@@ -7,10 +7,10 @@
 
 export const G = 1.0;
 
-/** 三个天体固定的配色（赤 / 青 / 金 —— 致敬「三日凌空」） */
+/** 三个天体固定的配色（赤 / 碧 / 金 —— 致敬「三日凌空」）；β 偏青绿，与 UI 蓝拉开 */
 export const BODY_PALETTE = [
   { key: 'alpha', label: '天体 α', color: 0xff5f4d, css: '#ff5f4d' },
-  { key: 'beta', label: '天体 β', color: 0x4dc4ff, css: '#4dc4ff' },
+  { key: 'beta', label: '天体 β', color: 0x3ee6c0, css: '#3ee6c0' },
   { key: 'gamma', label: '天体 γ', color: 0xffc14d, css: '#ffc14d' },
 ];
 
