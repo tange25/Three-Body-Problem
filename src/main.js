@@ -47,7 +47,7 @@ const uiRoot = ensureRoot('ui-root');
 const stage = new Stage(sceneRoot);
 const env = new Environment(stage.scene);
 const world = new World();
-const solar = new SolarSystem(stage.scene);
+const solar = new SolarSystem(stage.scene, stage.camera);
 
 const opts = {
   softening: PHYSICS_DEFAULTS.softening,
