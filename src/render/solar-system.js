@@ -60,7 +60,7 @@ void main() {
   float edge = abs(vUV.y - 0.5) * 2.0;
   bool core = uCore > 0.5;
   float fall    = pow(1.0 - t, core ? 1.2 : 1.6);      // 头亮尾淡（缓衰减，尾迹全程可读）
-  float lateral = core ? pow(1.0 - edge, 5.0) : pow(1.0 - edge, 2.2);
+  float lateral = core ? pow(1.0 - edge, 7.0) : pow(1.0 - edge, 2.2);
   vec3 col = mix(vec3(1.0), uColor, clamp(t * 1.7 - 0.3, 0.0, 1.0));
   float a = fall * lateral * uGain;
   if (a < 0.004) discard;
@@ -884,7 +884,7 @@ export class SolarSystem {
 
       // ── 极简星光双尾顶点重算（细锐光芯 + 柔和辉光，尾面始终面向相机）──
       const tailLen = 6 + 13 * activity;          // 尾长：远日也有基础长度，近日大幅拉长
-      const coreW = 0.10 + 0.14 * activity;       // 光芯：细如光线但清晰可辨
+      const coreW = 0.05 + 0.08 * activity;       // 光芯：细如发丝
       const glowW = 0.9 + 0.9 * activity;         // 辉光：柔和发光层次，广角下可读
       cameraDir.copy(this.camera.position).sub(pos).normalize();
       side.crossVectors(cameraDir, antiSun);
