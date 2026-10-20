@@ -19,93 +19,77 @@ import { getGlowTexture } from './bodies.js';
 const YEARS_PER_UNIT = 0.1;
 
 /* ════════════════════════════════════════════════════════════════════════
- * 彗星视觉 v2：「掠日流光彗星」
+ * 彗星视觉 v3：「极简星光彗星」
  * --------------------------------------------------------------------------
- * 设计主张（旧版「柔性粒子双尾 + 锥形光尾」的渲染逻辑已全部移除）：
- *   1. 外观形态 —— 白热彗核 + 单层呼吸彩色光晕（彗发），尾随一条
- *      「流光丝带」(ribbon)：彗核端白热 → 中段彗星色 → 尾尖淡入深空，
- *      宽度沿尾渐收。替代旧版「离子尾 + 尘埃尾粒子 + streak 锥形光带」。
- *   2. 运动轨迹 —— 太阳仍居椭圆中心，但公转改为开普勒式变速
- *      （角速度 ∝ 1/d²，近日俯冲加速、远日缓行；旧版为匀速扫行），
- *      轨道仍带 inc / node 倾角，各彗星轨道平面互不相同。
- *   3. 拖尾表现 —— 单条丝带沿「背日 → 反速度」方向平滑弯曲（越靠尾尖
- *      弯得越多），片元级流动条纹随时间滚动，模拟等离子体沿尾流失；
- *      附带垂直于丝带的微颤；长度与亮度随日距伸缩
- *      （近日猛烈拉长增亮、远日收缩成暗淡星点）。
- *   4. 与行星轨道的交互 ——
- *      a) 彗星径向穿越某行星轨道半径的瞬间，在该轨道上激起一圈扩散
- *         震波（加色混合圆环，约 1.6s 扩散淡出，用行星自身颜色与轨道呼应）；
- *      b) 彗星进入某行星引力影响半径（3D 距离）时，丝带被向该行星方向
- *         轻微掰弯，近大行星时可见明显牵引。
+ * 设计主张（旧版「柔性粒子双尾 + 锥形光尾」与 v2「流光丝带」的渲染逻辑
+ * 均已全部移除）：
+ *   1. 外观形态 —— 小而亮的白热彗核 + 紧致光晕（彗发）。
+ *   2. 运动轨迹 —— 太阳仍居椭圆中心，公转为开普勒式变速
+ *      （角速度 ∝ 1/d²，近日俯冲加速、远日缓行），
+ *      轨道带 inc / node 倾角，各彗星轨道平面互不相同。
+ *   3. 拖尾表现 —— 双层直尾：细锐光芯（core，白热→彗色，细如光线）+
+ *      柔和辉光（glow，同向更宽更软，提供发光层次）；尾一律笔直指向
+ *      背日方向（径向），无弯曲、无流动条纹，克制优雅；长度与亮度
+ *      随日距伸缩，且远日点保留基础长度，保证全程肉眼可见。
+ *   4. 与行星轨道的交互 —— 彗星径向穿越某行星轨道半径的瞬间，在该
+ *      轨道上激起一圈细丝震波（加色混合细圆环，约 2s 缓慢扩散淡出，
+ *      用行星自身颜色与轨道呼应）。
  */
-const COMET_RIBBON_VERT = `
-attribute float aAlpha; // 顶点基础透明度（头→尾衰减曲线）
-attribute float aV;     // 0 = 彗核端 → 1 = 尾尖
-varying float vAlpha;
-varying float vV;
+/* ── 彗星 v3「极简星光」尾：双层直尾 ─────────────────────────
+ * 结构：白热彗核（小而亮）+ 紧致光晕（彗发）
+ *     + 细锐光芯尾 core（白热→彗色，细如光线）
+ *     + 柔和辉光尾 glow（同向更宽更软，提供发光层次）
+ * 尾一律笔直指向背日方向（径向），无弯曲、无流动条纹——克制优雅。
+ * 四边形每帧按「背日 × 相机方向」重算，保证尾面始终面向相机。
+ */
+const COMET_TAIL_VERT = `
+attribute vec2 aUV;
+varying vec2 vUV;
 void main() {
-  vAlpha = aAlpha;
-  vV = aV;
+  vUV = aUV;
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }`;
-const COMET_RIBBON_FRAG = `
+const COMET_TAIL_FRAG = `
 precision mediump float;
 uniform vec3 uColor;  // 彗星主色
-uniform float uFlow;  // 流动时间（真实秒，驱动条纹滚动）
-uniform float uGain;  // 活动增益（近日点更高）
-varying float vAlpha;
-varying float vV;
+uniform float uGain;  // 活动增益
+uniform float uCore;  // 1 = 光芯层（细锐白线），0 = 辉光层（软晕）
+varying vec2 vUV;
 void main() {
-  // 颜色：彗核端白热 → 中段彗星色 → 尾尖向深空淡去
-  vec3 col = mix(vec3(1.0, 1.0, 1.0), uColor, clamp(vV * 1.5 - 0.2, 0.0, 1.0));
-  // 等离子流动条纹：高频细纹 + 低频涌浪，随 uFlow 向下游滚动
-  float stripe = 0.72 + 0.28 * sin(vV * 30.0 - uFlow * 4.2 + sin(vV * 11.0 + uFlow * 1.3) * 2.2);
-  // 尾端散逸余辉（缓慢收尾而不是骤断）
-  float tail = 0.35 + 0.65 * pow(1.0 - vV, 2.4);
-  float a = tail * vAlpha * uGain * stripe;
+  float t = clamp(vUV.x, 0.0, 1.0);   // 0 彗核端 → 1 尾尖
+  float edge = abs(vUV.y - 0.5) * 2.0;
+  bool core = uCore > 0.5;
+  float fall    = pow(1.0 - t, core ? 1.2 : 1.6);      // 头亮尾淡（缓衰减，尾迹全程可读）
+  float lateral = core ? pow(1.0 - edge, 5.0) : pow(1.0 - edge, 2.2);
+  vec3 col = mix(vec3(1.0), uColor, clamp(t * 1.7 - 0.3, 0.0, 1.0));
+  float a = fall * lateral * uGain;
   if (a < 0.004) discard;
   gl_FragColor = vec4(col, a);
 }`;
-function makeCometRibbonMaterial(color) {
+function makeCometTailMaterial(color, core) {
   return new THREE.ShaderMaterial({
     uniforms: {
       uColor: { value: new THREE.Color(color) },
-      uFlow: { value: 0 },
       uGain: { value: 0.6 },
+      uCore: { value: core ? 1 : 0 },
     },
-    vertexShader: COMET_RIBBON_VERT,
-    fragmentShader: COMET_RIBBON_FRAG,
+    vertexShader: COMET_TAIL_VERT,
+    fragmentShader: COMET_TAIL_FRAG,
     transparent: true,
     depthWrite: false,
     side: THREE.DoubleSide,
     blending: THREE.AdditiveBlending,
   });
 }
-/** 流光丝带几何：一条三角带，顶点烘焙「基础透明度 + 纵向坐标」，
- *  实际顶点位置每帧由 _updateComets 重算（含弯曲 / 宽度 / 微颤）。 */
-function makeCometRibbonGeometry(segments) {
-  const n = segments;
-  const pos = new Float32Array((n + 1) * 2 * 3);
-  const alpha = new Float32Array((n + 1) * 2);
-  const vv = new Float32Array((n + 1) * 2);
-  const idx = [];
-  for (let i = 0; i <= n; i++) {
-    const t = i / n;
-    const a = Math.pow(1 - t, 1.55) * 0.95; // 基亮尖淡
-    for (let s = 0; s < 2; s++) {
-      const k = i * 2 + s;
-      alpha[k] = a;
-      vv[k] = t;
-    }
-  }
-  for (let i = 0; i < n; i++) {
-    const a = i * 2, b = i * 2 + 1, c = i * 2 + 2, d = i * 2 + 3;
-    idx.push(a, b, c, b, d, c);
-  }
+/** 直尾四边形（4 顶点 / 2 三角）：uv.x 沿尾长（0 核端 → 1 尾尖），uv.y 为宽度；
+ *  顶点位置每帧由 _updateComets 重算（背日方向 + 相机朝向 + 宽度）。 */
+function makeCometTailGeometry() {
+  const pos = new Float32Array(4 * 3);
+  const uv = new Float32Array([0, 0, 0, 1, 1, 0, 1, 1]);
+  const idx = [0, 1, 2, 2, 1, 3];
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  geo.setAttribute('aAlpha', new THREE.BufferAttribute(alpha, 1));
-  geo.setAttribute('aV', new THREE.BufferAttribute(vv, 1));
+  geo.setAttribute('aUV', new THREE.BufferAttribute(uv, 2));
   geo.setIndex(idx);
   return geo;
 }
@@ -138,9 +122,10 @@ function makeBeltMaterial() {
   });
 }
 
-/* ── 彗星轨道辅助：椭圆相位点与速度方向（见下方 orbitPoint / orbitVel）── */
+/* ── 彗星轨道辅助：椭圆相位点（见下方 orbitPoint）── */
 
 /** 把「轨道平面内的 (x,z)」按倾角 inc、升交点 node 变换到世界坐标（线性，位置/速度通用） */
+/** 轨道上某相位处的世界坐标（线性，位置/速度通用） */
 function orbitPoint(a, b, phi, inc, node, out) {
   const x = a * Math.cos(phi);
   const z = b * Math.sin(phi);
@@ -150,19 +135,6 @@ function orbitPoint(a, b, phi, inc, node, out) {
   const y2 = y1;
   const z2 = -x * Math.sin(node) + z1 * Math.cos(node);
   return out.set(x2, y2, z2);
-}
-/** 轨道上某相位处的速度方向（世界系，已归一化）——用于尘埃尾的滞后弯曲 */
-function orbitVel(a, b, phi, inc, node, out) {
-  const vx = -a * Math.sin(phi);
-  const vz = b * Math.cos(phi);
-  const y1 = -vz * Math.sin(inc);
-  const z1 = vz * Math.cos(inc);
-  const x2 = vx * Math.cos(node) + z1 * Math.sin(node);
-  const y2 = y1;
-  const z2 = -vx * Math.sin(node) + z1 * Math.cos(node);
-  out.set(x2, y2, z2);
-  const len = out.length() || 1;
-  return out.multiplyScalar(1 / len);
 }
 
 /**
@@ -295,7 +267,7 @@ const AST_BELT = {
 };
 
 /**
- * 彗星 v2（太阳置于椭圆中心的可视化模型）
+ * 彗星 v3「极简星光」（太阳置于椭圆中心的可视化模型）
  * --------------------------------------------------------------------------
  * 用 a（半长轴）/ b（= a·bRatio，半短轴）描述一个以太阳为中心的细长椭圆；
  * 公转为开普勒式变速（见 _cometEpochAngle）：近日快、远日慢。
@@ -304,13 +276,13 @@ const AST_BELT = {
  */
 const COMETS = [
   { id: 'c1', name: '彗星 · 掠日者', type: '周期彗星', color: 0x9fd8ff, a: 26, bRatio: 0.12, inc: 18, node: 20, phase: 0.5, T: 14,
-    desc: '一颗近日点深入内太阳系的周期彗星。开普勒变速使它俯冲太阳时骤然加速，冰蓝的流光丝带被太阳风拉长；每当径向穿越行星轨道，都会激起一圈扩散的震波。',
+    desc: '一颗近日点深入内太阳系的周期彗星。开普勒变速使它俯冲太阳时骤然加速，冰蓝的笔直光尾被太阳风拉长成一道细锐星光；每当径向穿越行星轨道，都会激起一圈细丝震波。',
     facts: [['远日点', '约天王星轨道'], ['近日点', '金星轨道内侧'], ['显示周期', '14 年']] },
   { id: 'c2', name: '彗星 · 中周期', type: '周期彗星', color: 0xbfe8d8, a: 16, bRatio: 0.38, inc: 32, node: 140, phase: 0.1, T: 9,
-    desc: '轨道较「胖」的短周期彗星，倾角更大，常在火星与土星之间往复。青白的丝带在阳光下弯成柔和的弧，偶尔与木星擦肩而过，尾梢被引力牵扯出明显的弧度。',
+    desc: '轨道较「胖」的短周期彗星，倾角更大，常在火星与土星之间往复。青白的光芯尾笔直指向背日方向，外裹一层柔和的青晕；每当径向穿越行星轨道，都会激起一圈细丝震波。',
     facts: [['远日点', '土星轨道附近'], ['近日点', '火星轨道外侧'], ['显示周期', '9 年']] },
   { id: 'c3', name: '彗星 · 远游客', type: '长周期彗星', color: 0xffd9a0, a: 34, bRatio: 0.26, inc: 11, node: 250, phase: 0.0, T: 22,
-    desc: '来自太阳系外缘的长周期访客，大部分生命在冰冷幽暗中缓缓漂行；唯接近太阳的短暂时光里骤然明亮，金色的流光丝带在海王星轨道之外徐徐展开。',
+    desc: '来自太阳系外缘的长周期访客，大部分生命在冰冷幽暗中缓缓漂行；唯接近太阳的短暂时光里骤然明亮，暖金的笔直光尾在海王星轨道之外徐徐展开。',
     facts: [['远日点', '海王星之外'], ['近日点', '小行星带外侧'], ['显示周期', '22 年']] },
 ];
 
@@ -517,7 +489,7 @@ export class SolarSystem {
 
     this.pickMeshes = [];
     this.years = 0;
-    this.cometClock = 0; // 真实时间累计（驱动丝带流动与光晕呼吸，不受暂停影响）
+    this.cometClock = 0; // 真实时间累计（驱动光晕呼吸，不受暂停影响）
     this.maxRadius = 1;
     this.objects = []; // { data, orbitGroup, pivot, mesh, baseAngle }
     this.moon = null; // 月球（挂在地球的轨道组内）
@@ -756,14 +728,13 @@ export class SolarSystem {
   }
 
   /**
-   * 建造彗星 v2：每颗含
-   *   - 白热彗核（小球体，可拾取）+ 呼吸彩色光晕（彗发）
-   *   - 流光丝带尾（ribbon：白热→彗星色→淡、流动条纹、随日距伸缩）
+   * 建造彗星 v3「极简星光」：每颗含
+   *   - 白热彗核（小亮点，可拾取）+ 紧致光晕（小而亮的彗发）
+   *   - 极简星光双尾：细锐光芯 core + 柔和辉光 glow（笔直背日、面向相机）
    *   - 开普勒变速轨道查找表（角速度 ∝ 1/d²，近日快、远日慢）
-   * 每帧在 _updateComets 里按日距重算丝带顶点、活动增益与轨道穿越震波。
+   * 每帧在 _updateComets 里按日距重算双尾四边形、活动增益与轨道穿越震波。
    */
   _buildComets() {
-    const RIBBON_N = 56; // 流光丝带段数
     for (const c of COMETS) {
       const a = c.a;
       const b = c.a * c.bRatio;
@@ -778,20 +749,23 @@ export class SolarSystem {
       nucleus.scale.setScalar(0.09);
       this.group.add(nucleus);
 
-      // 呼吸彩色光晕（彗发）
+      // 紧致光晕（彗发：小而亮）
       const halo = new THREE.Sprite(
         new THREE.SpriteMaterial({
           map: getGlowTexture(), color: c.color, transparent: true,
-          opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false,
+          opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false,
         })
       );
       this.group.add(halo);
 
-      // 流光丝带尾
-      const ribbonMat = makeCometRibbonMaterial(c.color);
-      const ribbon = new THREE.Mesh(makeCometRibbonGeometry(RIBBON_N), ribbonMat);
-      ribbon.frustumCulled = false;
-      this.group.add(ribbon);
+      // 极简星光双尾：细锐光芯 + 柔和辉光
+      const coreMat = makeCometTailMaterial(c.color, true);
+      const glowMat = makeCometTailMaterial(c.color, false);
+      const coreTail = new THREE.Mesh(makeCometTailGeometry(), coreMat);
+      const glowTail = new THREE.Mesh(makeCometTailGeometry(), glowMat);
+      coreTail.frustumCulled = glowTail.frustumCulled = false;
+      this.group.add(coreTail);
+      this.group.add(glowTail);
 
       // 开普勒变速查找表：dt ∝ d²·dφ，归一化后按纪元二分 → φ，
       // 于是角速度 ∝ 1/d²（近日点俯冲、远日点缓行）
@@ -815,8 +789,8 @@ export class SolarSystem {
       nucleus.userData.info = info;
 
       this.comets.push({
-        data: c, a, b, inc, node, nucleus, halo, ribbon, ribbonMat,
-        RIBBON_N, table, info, epoch: 0, _prevDist: null,
+        data: c, a, b, inc, node, nucleus, halo, coreTail, glowTail,
+        coreMat, glowMat, table, info, epoch: 0, _prevDist: null,
       });
       this.pickMeshes.push(nucleus);
     }
@@ -870,33 +844,21 @@ export class SolarSystem {
   }
 
   /**
-   * 每帧推进彗星 v2：
-   *   开普勒变速轨道位置 → 光晕呼吸 → 流光丝带顶点重算
-   *   （弯曲 / 宽度 / 微颤 / 行星引力掰弯）→ 径向穿越行星轨道时激起扩散震波。
+   * 每帧推进彗星 v3「极简星光」：
+   *   开普勒变速轨道位置 → 光晕呼吸 → 双层直尾顶点重算
+   *   （细锐光芯 + 柔和辉光，笔直背日、面向相机）→ 径向穿越行星轨道时
+   *   激起细丝震波。
    */
   _updateComets(dtReal, timeScale) {
     if (!this.comets.length) return;
-    this.cometClock += dtReal; // 真实时间，驱动丝带流动与光晕呼吸
+    this.cometClock += dtReal; // 真实时间，驱动光晕呼吸
     const REF_DIST = 7.5; // 活动度参考日距（≈火星轨道外侧）
-    const PLANET_PROBE = 9; // 行星引力影响半径（3D 距离）
     const up = new THREE.Vector3(0, 1, 0);
     const pos = new THREE.Vector3();
     const antiSun = new THREE.Vector3();
-    const vel = new THREE.Vector3();
-    const antiVel = new THREE.Vector3();
     const side = new THREE.Vector3();
-    const dir = new THREE.Vector3();
-    const pull = new THREE.Vector3();
-    const cur = new THREE.Vector3();
-    const wp = new THREE.Vector3();
-
-    // 行星当前世界位置（用于引力摄动）
-    const planetWorld = [];
-    for (const o of this.objects) {
-      wp.copy(o.planetGroup.position);
-      o.orbitGroup.localToWorld(wp);
-      planetWorld.push(wp.clone());
-    }
+    const cameraDir = new THREE.Vector3();
+    const tip = new THREE.Vector3();
 
     for (const o of this.comets) {
       // ── 开普勒变速轨道位置 ─────────────────────────────
@@ -911,62 +873,30 @@ export class SolarSystem {
       // 升华活动度 ∝ (REF/距离)²：近日点剧烈增亮拉长，远日点收缩成暗淡星点
       const activity = THREE.MathUtils.clamp(Math.pow(REF_DIST / dist, 2) * 0.9, 0.18, 1.7);
 
-      // ── 光晕呼吸：白热彗核 + 彩色晕随日距与时间微胀缩 ──
+      // ── 光晕呼吸：小而亮的紧致彗发 ──
       const breath = 0.9 + 0.1 * Math.sin(this.cometClock * 2.2 + phi * 3);
-      o.halo.scale.setScalar(1.5 * (0.45 + 0.8 * activity) * breath);
-      o.halo.material.opacity = 0.85 * Math.min(1, 0.35 + activity) * breath;
-      o.nucleus.material.color.setScalar(0.55 + 0.45 * Math.min(1, activity));
+      o.halo.scale.setScalar(0.9 * (0.5 + 0.55 * activity) * breath);
+      o.halo.material.opacity = 0.95 * Math.min(1, 0.3 + activity) * breath;
+      o.nucleus.material.color.setScalar(0.7 + 0.3 * Math.min(1, activity));
 
-      // ── 方向基：背日（丝带主方向）+ 反速度（弯曲目标）──
-      antiSun.copy(pos).multiplyScalar(-1 / (dist || 1));
-      orbitVel(o.a, o.b, phi, o.inc, o.node, vel);
-      antiVel.copy(vel).multiplyScalar(-1);
-      side.crossVectors(antiSun, up);
-      if (side.lengthSq() < 1e-6) side.set(1, 0, 0); else side.normalize();
+      // ── 方向基：笔直背日（径向，远离太阳；pos 本身即从太阳指向彗星的径向量）──
+      antiSun.copy(pos).multiplyScalar(1 / (dist || 1));
 
-      // ── 行星引力摄动：影响半径内最近的行星 ──────────────
-      let grav = null, gravD = Infinity;
-      for (const w of planetWorld) {
-        const dd = w.distanceTo(pos);
-        if (dd < PLANET_PROBE && dd < gravD) { gravD = dd; grav = w; }
-      }
-      const gravWeight = grav ? Math.pow(1 - gravD / PLANET_PROBE, 1.6) : 0;
+      // ── 极简星光双尾顶点重算（细锐光芯 + 柔和辉光，尾面始终面向相机）──
+      const tailLen = 6 + 13 * activity;          // 尾长：远日也有基础长度，近日大幅拉长
+      const coreW = 0.10 + 0.14 * activity;       // 光芯：细如光线但清晰可辨
+      const glowW = 0.9 + 0.9 * activity;         // 辉光：柔和发光层次，广角下可读
+      cameraDir.copy(this.camera.position).sub(pos).normalize();
+      side.crossVectors(cameraDir, antiSun);
+      if (side.lengthSq() < 1e-6) side.crossVectors(antiSun, up);
+      side.normalize();
+      tip.copy(pos).addScaledVector(antiSun, tailLen);
+      this._setTailQuad(o.coreTail, pos, tip, side, coreW);
+      this._setTailQuad(o.glowTail, pos, tip, side, glowW);
+      o.coreMat.uniforms.uGain.value = 0.8 + 0.8 * activity;
+      o.glowMat.uniforms.uGain.value = 0.35 + 0.5 * activity;
 
-      // ── 流光丝带顶点重算 ───────────────────────────────
-      const tailLen = 15 * activity;
-      const arr = o.ribbon.geometry.attributes.position.array;
-      cur.copy(pos);
-      const stepLen = tailLen / o.RIBBON_N;
-      for (let i = 0; i <= o.RIBBON_N; i++) {
-        const t = i / o.RIBBON_N;
-        if (i > 0) {
-          // 背日 → 反速度平滑弯曲，越靠尾尖弯得越多
-          const bend = Math.pow(t, 1.15) * 0.85;
-          dir.copy(antiSun).lerp(antiVel, bend);
-          if (grav) {
-            // 引力掰弯：把丝带朝行星方向再拉一点（近端弱、远端强）
-            pull.copy(grav).sub(cur).normalize();
-            dir.addScaledVector(pull, gravWeight * (0.35 + 0.65 * t));
-          }
-          dir.normalize();
-          cur.addScaledVector(dir, stepLen);
-        }
-        // 微颤：垂直于丝带方向的等离子体抖动（尾尖更明显）
-        const flutter = 0.14 * Math.sin(this.cometClock * 3.0 + i * 1.7) * (0.2 + t);
-        const halfW = (0.5 * Math.pow(1 - t, 0.85) + 0.06) * (0.55 + 0.45 * activity);
-        const k = i * 2;
-        arr[k * 3] = cur.x + side.x * (halfW + flutter);
-        arr[k * 3 + 1] = cur.y + side.y * (halfW + flutter);
-        arr[k * 3 + 2] = cur.z + side.z * (halfW + flutter);
-        arr[(k + 1) * 3] = cur.x - side.x * (halfW - flutter * 0.6);
-        arr[(k + 1) * 3 + 1] = cur.y - side.y * (halfW - flutter * 0.6);
-        arr[(k + 1) * 3 + 2] = cur.z - side.z * (halfW - flutter * 0.6);
-      }
-      o.ribbon.geometry.attributes.position.needsUpdate = true;
-      o.ribbonMat.uniforms.uFlow.value = this.cometClock * (0.6 + 0.4 * activity);
-      o.ribbonMat.uniforms.uGain.value = 0.65 * Math.min(1.4, activity);
-
-      // ── 径向穿越行星轨道 → 激起扩散震波 ────────────────
+      // ── 径向穿越行星轨道 → 激起细丝震波 ────────────────
       const prev = o._prevDist;
       for (const pl of this.objects) {
         const rp = pl.r;
@@ -980,15 +910,27 @@ export class SolarSystem {
     this._updateCometPulses(dtReal);
   }
 
-  /** 在彗星径向穿越行星轨道处激起一圈扩散震波（加色混合圆环，朝向相机） */
+  /** 把四边形尾的 4 个顶点写为：核端 ± side·w/2、尾尖 ± side·w/2（直尾，面向相机） */
+  _setTailQuad(mesh, head, tip, side, width) {
+    const arr = mesh.geometry.attributes.position.array;
+    const hw = width * 0.5;
+    const ax = side.x * hw, ay = side.y * hw, az = side.z * hw;
+    arr[0] = head.x - ax;  arr[1] = head.y - ay;  arr[2] = head.z - az;
+    arr[3] = head.x + ax;  arr[4] = head.y + ay;  arr[5] = head.z + az;
+    arr[6] = tip.x - ax;   arr[7] = tip.y - ay;   arr[8] = tip.z - az;
+    arr[9] = tip.x + ax;   arr[10] = tip.y + ay;  arr[11] = tip.z + az;
+    mesh.geometry.attributes.position.needsUpdate = true;
+  }
+
+  /** 在彗星径向穿越行星轨道处激起一圈细丝震波（加色混合细圆环，朝向相机） */
   _spawnCometPulse(fromPos, rp, color) {
     const p = new THREE.Vector3().copy(fromPos).normalize().multiplyScalar(rp);
     const ring = new THREE.Mesh(
-      new THREE.RingGeometry(0.55, 0.62, 48),
+      new THREE.RingGeometry(0.56, 0.59, 64),
       new THREE.MeshBasicMaterial({
         color,
         transparent: true,
-        opacity: 0.85,
+        opacity: 0.5,
         side: THREE.DoubleSide,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
@@ -997,17 +939,17 @@ export class SolarSystem {
     ring.position.copy(p);
     ring.frustumCulled = false;
     this.group.add(ring);
-    this.cometPulses.push({ ring, t: 0, life: 1.6 });
+    this.cometPulses.push({ ring, t: 0, life: 2.0 });
   }
 
-  /** 推进并回收扩散震波（扩散放大 + 淡出） */
+  /** 推进并回收细丝震波（缓慢扩散放大 + 淡出） */
   _updateCometPulses(dtReal) {
     for (let i = this.cometPulses.length - 1; i >= 0; i--) {
       const pu = this.cometPulses[i];
       pu.t += dtReal;
       const k = Math.min(1, pu.t / pu.life);
-      pu.ring.scale.setScalar(0.3 + k * 1.7);
-      pu.ring.material.opacity = 0.85 * (1 - k);
+      pu.ring.scale.setScalar(0.35 + k * 1.5);
+      pu.ring.material.opacity = 0.5 * (1 - k);
       if (this.camera) pu.ring.quaternion.copy(this.camera.quaternion);
       if (k >= 1) {
         this.group.remove(pu.ring);
